@@ -6,8 +6,9 @@ const app = express().use(bodyParser.json());
 
 // 🔐 Variables de entorno (Railway)
 const TOKEN = process.env.WHATSAPP_TOKEN; // token de Meta
-const PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID; // 871507329381386
-const VERIFY_TOKEN = process.env.WEBHOOK_VERIFY_TOKEN || 'ysacc123';
+const PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID;
+const VERIFY_TOKEN = process.env.WEBHOOK_VERIFY_TOKEN || '';
+const SHEETS_WEBHOOK_URL = process.env.SHEETS_WEBHOOK_URL || ''; // URL de Apps Script
 
 // 🧠 Sesiones simples en memoria (por número)
 const sessions = new Map();
@@ -203,6 +204,18 @@ async function handleBusinessFlow(from, rawText) {
     session.contacto = text;
     session.stage = 'DONE';
 
+    const lead = {
+      from: from,
+      nombre: session.nombre,
+      servicio: session.servicio,
+      negocio: session.negocio,
+      presupuesto: session.presupuesto,
+      contacto: session.contacto,
+    };
+
+    // Guardar en Google Sheets (no bloquea el flujo si falla)
+    guardarLeadEnSheets(lead);
+
     const resumen =
       `🧾 *Resumen de tu solicitud:*\n\n` +
       `• Nombre: *${session.nombre}*\n` +
@@ -211,8 +224,6 @@ async function handleBusinessFlow(from, rawText) {
       `• Presupuesto: *${session.presupuesto}*\n` +
       `• Contacto: *${session.contacto}*\n\n`;
 
-    // aquí podrías: guardar en BD, enviar email, etc.
-    // por ahora solo cerramos la venta suave
     resetSession(from);
 
     return (
@@ -258,6 +269,29 @@ async function enviarMensajeTexto(to, message) {
   } catch (error) {
     console.error(
       '❌ Error al enviar mensaje:',
+      error.response?.data || error.message
+    );
+  }
+}
+
+async function guardarLeadEnSheets(lead) {
+  if (!SHEETS_WEBHOOK_URL) {
+    console.warn(
+      '⚠️ SHEETS_WEBHOOK_URL no está configurado, no se guardará el lead.'
+    );
+    return;
+  }
+
+  try {
+    const resp = await axios.post(SHEETS_WEBHOOK_URL, lead, {
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+    console.log('📝 Lead guardado en Google Sheets:', resp.data);
+  } catch (error) {
+    console.error(
+      '❌ Error al guardar lead en Sheets:',
       error.response?.data || error.message
     );
   }
