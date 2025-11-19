@@ -204,6 +204,12 @@ async function handleBusinessFlow(from, rawText) {
     session.contacto = text;
     session.stage = 'DONE';
 
+    // 🔍 Enriquecer lead
+    const idioma = detectarIdioma(
+      `${session.nombre} ${session.servicio} ${session.negocio} ${session.presupuesto} ${session.contacto}`
+    );
+    const { nivelInteres, score } = calcularNivelInteres(session.presupuesto);
+
     const lead = {
       from: from,
       nombre: session.nombre,
@@ -211,6 +217,9 @@ async function handleBusinessFlow(from, rawText) {
       negocio: session.negocio,
       presupuesto: session.presupuesto,
       contacto: session.contacto,
+      idioma: idioma,
+      nivel_interes: nivelInteres,
+      score_num: score,
     };
 
     // Guardar en Google Sheets (no bloquea el flujo si falla)
@@ -222,7 +231,9 @@ async function handleBusinessFlow(from, rawText) {
       `• Interés: *${session.servicio}*\n` +
       `• Negocio: *${session.negocio}*\n` +
       `• Presupuesto: *${session.presupuesto}*\n` +
-      `• Contacto: *${session.contacto}*\n\n`;
+      `• Contacto: *${session.contacto}*\n` +
+      `• Idioma detectado: *${idioma}*\n` +
+      `• Nivel de interés: *${nivelInteres}* (score: ${score})\n\n`;
 
     resetSession(from);
 
@@ -239,6 +250,70 @@ async function handleBusinessFlow(from, rawText) {
     'No estoy seguro de haber entendido 🧐\n' +
     'Escribe *menu* para empezar de nuevo o *salir* para terminar la conversación.'
   );
+}
+
+// 🔎 Detección muy sencilla de idioma
+function detectarIdioma(texto) {
+  const t = (texto || '').toLowerCase();
+
+  // Heurística super básica
+  if (/[ñáéíóúü]/.test(t) || /\bque\b|\bpara\b|\bpero\b|\bporque\b/.test(t)) {
+    return 'es';
+  }
+  if (/\bthe\b|\band\b|\bfor\b|\bwith\b|\bproject\b/.test(t)) {
+    return 'en';
+  }
+
+  return 'desconocido';
+}
+
+// 📊 Calcular nivel de interés según presupuesto
+function calcularNivelInteres(presupuestoTexto) {
+  const t = (presupuestoTexto || '').toLowerCase();
+
+  // Intentar sacar número
+  const numeros = t.match(/\d+/g);
+  let monto = null;
+  if (numeros && numeros.length > 0) {
+    monto = parseInt(numeros.join(''), 10);
+  }
+
+  let nivel = 'Desconocido';
+  let score = 50;
+
+  if (monto !== null && !isNaN(monto)) {
+    if (monto < 500) {
+      nivel = 'Bajo';
+      score = 40;
+    } else if (monto < 2000) {
+      nivel = 'Medio';
+      score = 70;
+    } else {
+      nivel = 'Alto';
+      score = 90;
+    }
+  } else {
+    if (
+      t.includes('bajo') ||
+      t.includes('limitado') ||
+      t.includes('ajustado')
+    ) {
+      nivel = 'Bajo';
+      score = 40;
+    } else if (t.includes('medio')) {
+      nivel = 'Medio';
+      score = 70;
+    } else if (
+      t.includes('alto') ||
+      t.includes('completo') ||
+      t.includes('robusto')
+    ) {
+      nivel = 'Alto';
+      score = 90;
+    }
+  }
+
+  return { nivelInteres: nivel, score };
 }
 
 // 🔧 Función para enviar mensajes de texto
@@ -303,3 +378,15 @@ console.log('🔑 Longitud TOKEN:', TOKEN ? TOKEN.length : 'TOKEN vacío');
 app.listen(PORT, () => {
   console.log(`🚀 Servidor escuchando en puerto ${PORT}`);
 });
+
+// 🧾 Mensaje de bienvenida centralizado
+function mensajeBienvenida() {
+  return (
+    '👋 ¡Hola! Soy el asistente virtual de *Agencia de Desarrollo – Soluciones Empresariales*.\n\n' +
+    'Te ayudamos con:\n' +
+    '• Desarrollo web y landing pages\n' +
+    '• Sistemas empresariales y SaaS multitenant\n' +
+    '• Automatización y marketing digital\n\n' +
+    'Escribe *hola* para comenzar o cuéntame brevemente qué necesitas.'
+  );
+}
